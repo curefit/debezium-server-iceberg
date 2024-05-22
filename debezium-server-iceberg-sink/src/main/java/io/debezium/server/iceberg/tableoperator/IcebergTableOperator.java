@@ -160,6 +160,26 @@ public class IcebergTableOperator {
 
   }
 
+  public void addRecordsToTable(Table icebergTable, ArrayList<Record> events) {
+
+    try (BaseTaskWriter<Record> writer = writerFactory.create(icebergTable)) {
+      for (Record e : events) {
+        writer.write(e);
+      }
+
+      writer.close();
+      WriteResult files = writer.complete();
+      AppendFiles appendFiles = icebergTable.newAppend();
+      Arrays.stream(files.dataFiles()).forEach(appendFiles::appendFile);
+      appendFiles.commit();
+    } catch (IOException ex) {
+      throw new DebeziumException(ex);
+    }
+
+    LOGGER.info("Committed {} events to table! {}", events.size(), icebergTable.location());
+
+  }
+
   /**
    * Adds list of change events to iceberg table. All the events are having same schema.
    *

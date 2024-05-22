@@ -28,9 +28,9 @@ log
 npm-debug.log
 .DS_Store
 phantomjsdriver.log
-
+appdist/
 generated-sources/
-
+app*.prop
 /state/
 bin/
 

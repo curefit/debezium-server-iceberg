@@ -15,6 +15,7 @@ import io.debezium.engine.format.Json;
 import io.debezium.serde.DebeziumSerdes;
 import io.debezium.server.BaseChangeConsumer;
 import io.debezium.server.iceberg.batchsizewait.InterfaceBatchSizeWait;
+import io.debezium.server.iceberg.tableoperator.IcebergTableOperator;
 import io.debezium.server.iceberg.tableoperator.PartitionedAppendWriter;
 
 import java.io.IOException;
@@ -53,6 +54,9 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.apache.iceberg.TableProperties.DEFAULT_FILE_FORMAT;
+import static org.apache.iceberg.TableProperties.DEFAULT_FILE_FORMAT_DEFAULT;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 import static org.apache.iceberg.types.Types.NestedField.required;
 
@@ -103,14 +107,25 @@ public class IcebergEventsChangeConsumer extends BaseChangeConsumer implements D
   String namespace;
   @ConfigProperty(name = "debezium.sink.iceberg.catalog-name", defaultValue = "default")
   String catalogName;
+  @ConfigProperty(name = "debezium.sink.iceberg.table-prefix", defaultValue = "")
+  Optional<String> tablePrefix;
+  @ConfigProperty(name = "debezium.sink.iceberg." + DEFAULT_FILE_FORMAT, defaultValue = DEFAULT_FILE_FORMAT_DEFAULT)
+  String writeFormat;
   @ConfigProperty(name = "debezium.sink.batch.batch-size-wait", defaultValue = "NoBatchSizeWait")
   String batchSizeWaitName;
+  @ConfigProperty(name = "debezium.sink.iceberg.destination-regexp", defaultValue = "")
+  protected Optional<String> destinationRegexp;
+  @ConfigProperty(name = "debezium.sink.iceberg.destination-regexp-replace", defaultValue = "")
+  protected Optional<String> destinationRegexpReplace;
   @Inject
   @Any
   Instance<InterfaceBatchSizeWait> batchSizeWaitInstances;
   InterfaceBatchSizeWait batchSizeWait;
   Catalog icebergCatalog;
   Table eventTable;
+
+  @Inject
+  IcebergTableOperator icebergTableOperator;
 
   @PostConstruct
   void connect() {
@@ -123,24 +138,16 @@ public class IcebergEventsChangeConsumer extends BaseChangeConsumer implements D
                                   "Supported (debezium.format.key=*) formats are {json,}!");
     }
 
-    TableIdentifier tableIdentifier = TableIdentifier.of(Namespace.of(namespace), "debezium_events");
-
     Map<String, String> conf = IcebergUtil.getConfigSubset(ConfigProvider.getConfig(), PROP_PREFIX);
     conf.forEach(this.hadoopConf::set);
     this.icebergProperties.putAll(conf);
 
     icebergCatalog = CatalogUtil.buildIcebergCatalog(catalogName, icebergProperties, hadoopConf);
 
-    // create table if not exists
-    if (!icebergCatalog.tableExists(tableIdentifier)) {
-      icebergCatalog
-          .buildTable(tableIdentifier, TABLE_SCHEMA)
-          .withPartitionSpec(TABLE_PARTITION)
-          .withSortOrder(TABLE_SORT_ORDER)
-          .create();
-    }
-    // load table
-    eventTable = icebergCatalog.loadTable(tableIdentifier);
+    System.out.println("==================first===================");
+    System.out.println(icebergCatalog);
+    System.out.println(icebergCatalog);
+    System.out.println("==================first===================");
 
     batchSizeWait = IcebergUtil.selectInstance(batchSizeWaitInstances, batchSizeWaitName);
     batchSizeWait.initizalize();
@@ -189,10 +196,27 @@ public class IcebergEventsChangeConsumer extends BaseChangeConsumer implements D
     Instant start = Instant.now();
 
     OffsetDateTime batchTime = OffsetDateTime.now(ZoneOffset.UTC);
-    ArrayList<Record> icebergRecords = records.stream()
-        .map(e -> getIcebergRecord(e, batchTime))
-        .collect(Collectors.toCollection(ArrayList::new));
-    commitBatch(icebergRecords);
+//    ArrayList<Record> icebergRecords = records.stream()
+//        .map(e -> getIcebergRecord(e, batchTime))
+//        .collect(Collectors.toCollection(ArrayList::new));
+
+    Map<String,ArrayList<Record>> result = records.stream()
+            .map(e
+            -> {
+              try {
+                return getIcebergRecord(e, batchTime);
+              } catch (Exception ex) {
+                ex.printStackTrace();
+                return null;
+              }
+            }).collect(Collectors.groupingBy(e -> e.getField("event_destination").toString(), Collectors.toCollection(ArrayList::new)));
+
+    for (Map.Entry<String, ArrayList<Record>> tableEvents : result.entrySet()) {
+      Table icebergTable = this.loadIcebergTable(mapDestination(tableEvents.getKey()));
+      icebergTableOperator.addRecordsToTable(icebergTable, tableEvents.getValue());
+    }
+
+//    commitBatch(icebergRecords);
 
     // workaround! somehow offset is not saved to file unless we call committer.markProcessed
     // even it's should be saved to file periodically
@@ -204,6 +228,26 @@ public class IcebergEventsChangeConsumer extends BaseChangeConsumer implements D
     batchSizeWait.waitMs(records.size(), (int) Duration.between(start, Instant.now()).toMillis());
   }
 
+  public TableIdentifier mapDestination(String destination) {
+    final String tableName = destination
+            .replaceAll(destinationRegexp.orElse(""), destinationRegexpReplace.orElse(""))
+            .replace(".", "_");
+
+    return TableIdentifier.of(Namespace.of(namespace), tablePrefix.orElse("") + tableName);
+  }
+
+  public Table loadIcebergTable(TableIdentifier tableId) {
+    return IcebergUtil.loadIcebergTable(icebergCatalog, tableId).orElseGet(() -> {
+      try {
+        return IcebergUtil.createIcebergTable(icebergCatalog, tableId, TABLE_SCHEMA, writeFormat,
+                false, // partition if its append mode
+                "event_sink_timestamptz");
+      } catch (Exception e){
+        throw new DebeziumException("Failed to create table from debezium event schema:"+tableId+" Error:" + e.getMessage(), e);
+      }
+    });
+  }
+
   private void commitBatch(ArrayList<Record> icebergRecords) {
 
     FileFormat format = IcebergUtil.getTableFileFormat(eventTable);
@@ -211,6 +255,8 @@ public class IcebergEventsChangeConsumer extends BaseChangeConsumer implements D
     int partitionId = Integer.parseInt(dtFormater.format(Instant.now()));
     OutputFileFactory fileFactory = OutputFileFactory.builderFor(eventTable, partitionId, 1L)
         .defaultSpec(eventTable.spec()).format(format).build();
+
+
 
     BaseTaskWriter<Record> writer = new PartitionedAppendWriter(
         eventTable.spec(), format, appenderFactory, fileFactory, eventTable.io(), Long.MAX_VALUE, eventTable.schema());

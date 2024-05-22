@@ -85,8 +85,18 @@ public final class IcebergSchemaHistory extends AbstractSchemaHistory {
   public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, boolean useCatalogBeforeSchema) {
     super.configure(config, comparator, listener, useCatalogBeforeSchema);
     this.historyConfig = new IcebergSchemaHistoryConfig(config);
+
+    System.out.println("================hist conf=====================");
+    System.out.println(this.historyConfig);
+    System.out.println("==============================================");
+
     icebergCatalog = CatalogUtil.buildIcebergCatalog(this.historyConfig.catalogName(),
         this.historyConfig.icebergProperties(), this.historyConfig.hadoopConfig());
+
+    System.out.println("================iceberg conf=====================");
+    System.out.println(icebergCatalog);
+    System.out.println("=================================================");
+
     tableFullName = String.format("%s.%s", this.historyConfig.catalogName(), this.historyConfig.tableName());
     tableId = TableIdentifier.of(Namespace.of(this.historyConfig.catalogName()), this.historyConfig.tableName());
 
@@ -193,6 +203,11 @@ public final class IcebergSchemaHistory extends AbstractSchemaHistory {
   public boolean storageExists() {
     try {
       Table table = icebergCatalog.loadTable(tableId);
+      System.out.println("================storage=======================");
+      System.out.println(table);
+      System.out.println(tableId);
+      System.out.println(icebergCatalog.loadTable(tableId));
+      System.out.println("==============================================");
       return table != null;
     } catch (NoSuchTableException e) {
       return false;
@@ -279,6 +294,10 @@ public final class IcebergSchemaHistory extends AbstractSchemaHistory {
 
       final Map<String, String> conf = new HashMap<>();
       this.config.forEach((propName, value) -> {
+        System.out.println("================iceberg properties pass=====================");
+        System.out.println(propName);
+        System.out.println(value);
+        System.out.println("================iceberg properties pass=====================");
         if (propName.startsWith(CONFIGURATION_FIELD_PREFIX_STRING + "iceberg.")) {
           final String newPropName = propName.substring((CONFIGURATION_FIELD_PREFIX_STRING + "iceberg.").length());
           conf.put(newPropName, value);
