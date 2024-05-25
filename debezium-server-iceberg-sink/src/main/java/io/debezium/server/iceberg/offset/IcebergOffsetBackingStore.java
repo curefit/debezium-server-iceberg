@@ -90,10 +90,6 @@ public class IcebergOffsetBackingStore extends MemoryOffsetBackingStore implemen
 
     offsetConfig = new IcebergOffsetBackingStoreConfig(Configuration.from(config.originalsStrings()));
 
-    System.out.println("================offset conf=====================");
-    System.out.println(icebergCatalog);
-    System.out.println("=================================================");
-
     icebergCatalog = CatalogUtil.buildIcebergCatalog(offsetConfig.catalogName(),
         offsetConfig.icebergProperties(), offsetConfig.hadoopConfig());
     tableFullName = String.format("%s.%s", offsetConfig.tableNamespace(), offsetConfig.tableName());

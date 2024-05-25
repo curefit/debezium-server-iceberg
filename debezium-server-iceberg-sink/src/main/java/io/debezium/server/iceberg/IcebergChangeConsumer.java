@@ -59,7 +59,7 @@ import static org.apache.iceberg.TableProperties.DEFAULT_FILE_FORMAT_DEFAULT;
  *
  * @author Ismail Simsek
  */
-@Named("iceberg")
+@Named("icebergevents")
 @Dependent
 public class IcebergChangeConsumer extends BaseChangeConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<Object, Object>> {
 

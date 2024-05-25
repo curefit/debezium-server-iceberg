@@ -65,7 +65,7 @@ import static org.apache.iceberg.types.Types.NestedField.required;
  *
  * @author Ismail Simsek
  */
-@Named("icebergevents")
+@Named("iceberg")
 @Dependent
 public class IcebergEventsChangeConsumer extends BaseChangeConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<Object, Object>> {
 
@@ -144,11 +144,6 @@ public class IcebergEventsChangeConsumer extends BaseChangeConsumer implements D
 
     icebergCatalog = CatalogUtil.buildIcebergCatalog(catalogName, icebergProperties, hadoopConf);
 
-    System.out.println("==================first===================");
-    System.out.println(icebergCatalog);
-    System.out.println(icebergCatalog);
-    System.out.println("==================first===================");
-
     batchSizeWait = IcebergUtil.selectInstance(batchSizeWaitInstances, batchSizeWaitName);
     batchSizeWait.initizalize();
 
@@ -196,9 +191,6 @@ public class IcebergEventsChangeConsumer extends BaseChangeConsumer implements D
     Instant start = Instant.now();
 
     OffsetDateTime batchTime = OffsetDateTime.now(ZoneOffset.UTC);
-//    ArrayList<Record> icebergRecords = records.stream()
-//        .map(e -> getIcebergRecord(e, batchTime))
-//        .collect(Collectors.toCollection(ArrayList::new));
 
     Map<String,ArrayList<Record>> result = records.stream()
             .map(e
@@ -240,7 +232,7 @@ public class IcebergEventsChangeConsumer extends BaseChangeConsumer implements D
     return IcebergUtil.loadIcebergTable(icebergCatalog, tableId).orElseGet(() -> {
       try {
         return IcebergUtil.createIcebergTable(icebergCatalog, tableId, TABLE_SCHEMA, writeFormat,
-                false, // partition if its append mode
+                true, // partition if its append mode
                 "event_sink_timestamptz");
       } catch (Exception e){
         throw new DebeziumException("Failed to create table from debezium event schema:"+tableId+" Error:" + e.getMessage(), e);
