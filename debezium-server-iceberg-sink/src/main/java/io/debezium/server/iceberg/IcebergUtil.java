@@ -90,7 +90,7 @@ public class IcebergUtil {
         LOGGER.warn("Table schema dont contain partition field {}! Creating table without partition", partition);
         ps = PartitionSpec.builderFor(schema).build();
       } else {
-        ps = PartitionSpec.builderFor(schema).day(partitionField).build();
+        ps = PartitionSpec.builderFor(schema).hour(partitionField).build();
       }
     } else {
       ps = PartitionSpec.builderFor(schema).build();
