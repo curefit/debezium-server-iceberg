@@ -89,8 +89,8 @@ public final class IcebergSchemaHistory extends AbstractSchemaHistory {
     icebergCatalog = CatalogUtil.buildIcebergCatalog(this.historyConfig.catalogName(),
         this.historyConfig.icebergProperties(), this.historyConfig.hadoopConfig());
 
-    tableFullName = String.format("%s.%s", this.historyConfig.catalogName(), this.historyConfig.tableName());
-    tableId = TableIdentifier.of(Namespace.of(this.historyConfig.catalogName()), this.historyConfig.tableName());
+    tableFullName = String.format("%s.%s", this.historyConfig.tableNamespace(), this.historyConfig.tableName());
+    tableId = TableIdentifier.of(Namespace.of(this.historyConfig.tableNamespace()), this.historyConfig.tableName());
 
     if (running.get()) {
       throw new SchemaHistoryException("Iceberg database history process already initialized table: " + tableFullName);
@@ -293,6 +293,10 @@ public final class IcebergSchemaHistory extends AbstractSchemaHistory {
 
     public String catalogName() {
       return this.config.getString(Field.create(CONFIGURATION_FIELD_PREFIX_STRING + "iceberg.catalog-name").withDefault("default"));
+    }
+
+    public String tableNamespace() {
+      return this.config.getString(Field.create(CONFIGURATION_FIELD_PREFIX_STRING + "iceberg.table-namespace").withDefault("default"));
     }
 
     public String tableName() {

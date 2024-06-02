@@ -83,7 +83,6 @@ public class IcebergUtil {
 
     LOGGER.warn("Creating table:'{}'\nschema:{}\nrowIdentifier:{}", tableIdentifier, schema,
         schema.identifierFieldNames());
-
     final PartitionSpec ps;
     if (partition) {
       if (schema.findField(partitionField) == null) {

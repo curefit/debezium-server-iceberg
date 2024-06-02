@@ -9,6 +9,8 @@
 package io.debezium.server.iceberg.tableoperator;
 
 import io.debezium.DebeziumException;
+import io.debezium.engine.ChangeEvent;
+import io.debezium.engine.DebeziumEngine;
 import io.debezium.server.iceberg.IcebergChangeEvent;
 
 import java.io.IOException;
@@ -24,6 +26,7 @@ import com.google.common.collect.ImmutableMap;
 import jakarta.enterprise.context.Dependent;
 import jakarta.inject.Inject;
 import org.apache.iceberg.*;
+import org.apache.iceberg.data.GenericRecord;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.io.BaseTaskWriter;
 import org.apache.iceberg.io.WriteResult;
@@ -139,6 +142,8 @@ public class IcebergTableOperator {
     // when operation mode is not upsert deduplicate the events to avoid inserting duplicate row
     if (upsert && !icebergTable.schema().identifierFieldIds().isEmpty()) {
       events = deduplicateBatch(events);
+    } else {
+      addToTablePerSchema(icebergTable, events);
     }
 
     if (!allowFieldAddition) {
@@ -157,6 +162,30 @@ public class IcebergTableOperator {
         addToTablePerSchema(icebergTable, schemaEvents.getValue());
       }
     }
+
+  }
+
+  public void addRecordsToTableAndCommit(Table icebergTable, List<Map.Entry<ChangeEvent<Object, Object>, GenericRecord>> events,
+                                         DebeziumEngine.RecordCommitter<ChangeEvent<Object, Object>> committer) {
+
+    try (BaseTaskWriter<Record> writer = writerFactory.create(icebergTable)) {
+      for (Map.Entry<ChangeEvent<Object, Object>, GenericRecord> e : events) {
+        writer.write(e.getValue());
+        committer.markProcessed(e.getKey());
+      }
+
+      writer.close();
+      WriteResult files = writer.complete();
+      AppendFiles appendFiles = icebergTable.newAppend();
+      Arrays.stream(files.dataFiles()).forEach(appendFiles::appendFile);
+      appendFiles.commit();
+    } catch (IOException ex) {
+      throw new DebeziumException(ex);
+    } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+    }
+
+    LOGGER.info("Committed {} events to table! {}", events.size(), icebergTable.location());
 
   }
 
